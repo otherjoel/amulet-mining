@@ -1,5 +1,7 @@
 #lang racket
 
+;; SPDX-License-Identifier: BlueOak-1.0.0
+
 (require data/enumerate/lib
          file/sha1
          threading)
