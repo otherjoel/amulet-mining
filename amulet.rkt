@@ -8,11 +8,12 @@
 
 (provide (all-defined-out))
 
-;; Mining for ‘amulets’, short poems whose SHA-256 hash includes a sequence of four or more
-;; consecutive 8s. See https://text.bargains/amulet/
+;; Mining for ‘amulets’, short texts whose SHA-256 hash includes a sequence of four or more
+;; consecutive 8s. See https://www.robinsloan.com/special/amulet/definition/
 
-
-;; First some utilities for testing and printing amulets
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; First some utilities for testing
+;; and printing amulets:
 
 (define (small-enough? bs)
   (cond
@@ -51,7 +52,9 @@
   (printf "~a\n" (string-join a ""))
   (printf "\n└~a\n" (make-string 72 #\─)))
 
-;; And now, tools for building things that might be amulets.
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; And now, tools for building things
+;; that might be amulets.
 
 ;; Given a list of words, we might try modifying them in various ways in order to kick up an amulet:
 ;; adding bits of punctuation, changing their case, or prefixing them with spaces. Each enumeration
@@ -98,7 +101,9 @@
     (define quality (amulet? geode))
     (cond [quality (print-amulet geode (first quality))])))
 
-;; We can speed things up by using parallel processing.
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; We can speed things up by using
+;; parallel processing.
 
 ;; A Racket “place” runs in a separate Racket instance on its own core.
 (define (start-amulet-finder word-lst c-id lo hi)
