@@ -6,6 +6,8 @@
          file/sha1
          threading)
 
+(provide (all-defined-out))
+
 ;; Mining for ‘amulets’, short poems whose SHA-256 hash includes a sequence of four or more
 ;; consecutive 8s. See https://text.bargains/amulet/
 
@@ -45,10 +47,9 @@
   (define core-id (if (eq? c "") "" (format "core ~a:" c)))
   (define rating (hash-ref quality-levels q "?!?!?"))
   (define top-rule-length (apply - 67 (map string-length (list q core-id rating))))
-  (displayln
-   (format "┌~a[~a~a (~a)]" (make-string top-rule-length #\─) core-id q rating))
-  (display (string-join a ""))
-  (displayln (format "\n└~a" (make-string 72 #\─))))
+  (printf "┌~a[~a~a (~a)]\n" (make-string top-rule-length #\─) core-id q rating)
+  (printf "~a\n" (string-join a ""))
+  (printf "\n└~a\n" (make-string 72 #\─)))
 
 ;; And now, tools for building things that might be amulets.
 
@@ -74,7 +75,7 @@
          word-spacers/e
          #:contract string?))
 
-;; A geode is a list of word-variants, with no word being used more than once. A geodes may or may
+;; A geode is a list of word-variants, with no word being used more than once. A geode may or may
 ;; not contain an amulet. This function returns an enumeration of all possible geodes for a given
 ;; set of words.
 (define (geodes/e words)
@@ -99,54 +100,48 @@
 
 ;; We can speed things up by using parallel processing.
 
-;; A Racket “place” runs in a separate Racket VM on its own processor or core.
+;; A Racket “place” runs in a separate Racket instance on its own core.
 (define (start-amulet-finder word-lst c-id lo hi)
-  (let ([p (place ch
-                  (define me (place-channel-get ch))
-                  (define geo/e (geodes/e (place-channel-get ch)))
-                  (define low-bound (place-channel-get ch))
-                  (define hi-bound (place-channel-get ch))
-                  (for ([n (in-range low-bound hi-bound)])
-                    (define g (from-nat geo/e n))
-                    (define quality (amulet? (from-nat geo/e n)))
-                    (cond [quality (place-channel-put ch (list me g quality))]))
-                  (place-channel-put ch me)
-                  (exit 0))])
-    (place-channel-put p c-id)
-    (place-channel-put p word-lst)
-    (place-channel-put p lo)
-    (place-channel-put p hi)
-    (displayln (format "core ~a: start ~a, end ~a" c-id lo hi))
-    p))
+  (begin0
+    (place/context
+     ch
+     (define geo/e (geodes/e word-lst))
+     (for ([n (in-range lo hi)])
+       (define g (from-nat geo/e n))
+       (define quality (amulet? g))
+       (cond [quality (place-channel-put ch (list g (first quality) c-id))]))
+     (exit c-id))
+    (printf "core ~a: start ~a, end ~a\n" c-id lo hi)))
 
-(define (parallel-find-amulets word-string)
+(define (parallel-find-amulets word-string [core-ct (processor-count)])
   (define word-lst (string-split word-string))
   (define size (enum-count (geodes/e word-lst)))
-  (define per-core (quotient size (processor-count)))
+  (define per-core (quotient size core-ct))
 
-  (displayln (format "Enum space size: ~a" size))
-  
+  (printf "Enum space size: ~a\n" size)
+
   (define cores-running
-    (for/list ([c (in-range (processor-count))])
+    (for/list ([c (in-range core-ct)])
       (define start (* c per-core))
-      (define end (if (eq? c (sub1 (processor-count)))
+      (define end (if (eq? c (sub1 core-ct))
                       size
                       (sub1 (* (add1 c) per-core))))
       (start-amulet-finder word-lst c start end)))
-
-  (define (check-core p)
-    (cond
-      [p
-       (match  (place-channel-get p)
-         [(list c a quality) (begin (print-amulet a (first quality) c) p)]
-         [_ #false])]
-      [else #false]))
-
+  
   (time
-   (void
-    (let loop ([cores cores-running])
-      (cond [(andmap false? cores) 'finished]
-            [else
-             (loop
-              (for/list ([c (in-list cores)])
-                (check-core c)))])))))
+   (with-handlers ([exn:break? void])
+     (let loop ([finished '()])
+       (cond
+         [(= (length finished) core-ct) 'finished]
+         [else
+          (define found-or-finished-evts
+            (for/list ([c (in-range core-ct)]
+                       [p (in-list cores-running)]
+                       #:when (not (member c finished)))
+              (choice-evt
+               (handle-evt (place-dead-evt p) (λ (_) c))
+               (handle-evt p (λ (v) v)))))
+          (match (apply sync/enable-break found-or-finished-evts)
+            [(list geode quality c-id) (print-amulet geode quality c-id) (loop finished)]
+            [(? integer? done-core) (loop (cons done-core finished))])]))
+     )))
